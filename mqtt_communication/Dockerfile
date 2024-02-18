@@ -1,8 +1,10 @@
-FROM python:3.12.2-alpine3.19
+FROM python:3.8.18-bookworm
 WORKDIR /app
 
 COPY ./src .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN rm .env
+
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 CMD ["python", "main.py"]

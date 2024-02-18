@@ -17,13 +17,14 @@ load_dotenv()
 MQTT_HOST = os.getenv("MQTT_HOST") or "localhost"
 MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 MQTT_TOPIC = os.getenv("MQTT_TOPIC") or "ros/data"
-CARLA_HOST = "localhost"
-CARLA_PORT = 2000
+CARLA_HOST = os.getenv('CARLA_HOST') or "localhost"
+CARLA_PORT = int(os.getenv('CARLA_PORT')) or 2000
 
 
 async def carla_simulation(client_id: str, data_manager: DataManager):
     global CARLA_HOST, CARLA_PORT
     try:
+        logging.debug(f"Connecting to Carla at {CARLA_HOST}:{CARLA_PORT}")
         client = carla.Client(CARLA_HOST, CARLA_PORT)
         client.set_timeout(10.0)
         logging.debug("Connected to Carla")

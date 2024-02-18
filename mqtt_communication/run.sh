@@ -38,10 +38,10 @@ done
 if [ $OPTIND -eq 1 ]; then show_help; exit 0; fi
 
 if [ $skip_build -eq 0 ]; then
-  docker build -t mqtt-app .
+  docker build -t mqtt-app . || exit 1
 fi
 
 
 for i in $(seq 1 $instance_count); do
-  docker run -d --name mqtt-app-instance-$i --network mqtt-network mqtt-app
+  docker run -d --name mqtt-app-instance-$i --env MQTT_HOST=mqtt --env MQTT_PORT=1883 --env MQTT_TOPIC=ros/data --env CARLA_HOST=host.docker.internal --env CARLA_PORT=2000 --network mqtt-network --add-host=host.docker.internal:host-gateway mqtt-app 
 done
