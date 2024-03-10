@@ -1,7 +1,7 @@
 FROM python:3.8.18-bookworm
 WORKDIR /app
 
-COPY ./src .
+COPY ./node .
 
 RUN rm .env
 
