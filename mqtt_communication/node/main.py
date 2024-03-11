@@ -1,9 +1,8 @@
 import asyncio
 import os
-import uuid
+import argparse
 import logging
 import random
-from typing import Tuple
 
 from carla_interactor.spawn_actor import spawn_actor
 from dotenv import load_dotenv
@@ -17,11 +16,12 @@ logging.basicConfig(level=logging.DEBUG,
 load_dotenv()
 
 
-async def carla_simulation():
+async def carla_simulation(type: str = None):
     client_id = str(random.randint(0, 4294967295))
     logging.info(f"Client ID: {client_id}")
 
-    actor_type = random.choice(['vehicle', 'walker'])
+    actor_type = type if type is not None else random.choice(
+        ['vehicle', 'walker'])
 
     mqtt_client = MQTTClient(os.getenv("MQTT_HOST"), int(
         os.getenv("MQTT_PORT")), client_id)
@@ -76,9 +76,15 @@ async def carla_simulation():
             logging.debug("AI Controller destroyed.")
 
 
-async def main():
+async def main(type: str = None):
     logging.debug("Starting main")
-    await asyncio.gather(carla_simulation())
+    await asyncio.gather(carla_simulation(type))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description='Your program description')
+    parser.add_argument('-t', '--type', type=str, choices=['vehicle', 'walker'], default=None,
+                        help='Specify the type (vehicle or walker)')
+
+    args = parser.parse_args()
+
+    asyncio.run(main(args.type))
