@@ -1,0 +1,88 @@
+DENM DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+DENM ::= SEQUENCE {
+    header ItsPduHeader,
+    denm DecentralizedEnvironmentalNotificationMessage
+}
+
+ItsPduHeader ::= SEQUENCE {
+    protocolVersion INTEGER (0..255),
+    messageID INTEGER (0..255),
+    stationID INTEGER (0..4294967295)
+}
+
+DecentralizedEnvironmentalNotificationMessage ::= SEQUENCE {
+    management ManagementContainer,
+    situation SituationContainer OPTIONAL,
+    location LocationContainer OPTIONAL,
+    alacarte AlacarteContainer OPTIONAL
+}
+
+ManagementContainer ::= SEQUENCE {
+    actionID SEQUENCE {
+        originatingStationID INTEGER (0..4294967295),
+        sequenceNumber INTEGER (0..65535)
+    },
+    detectionTime INTEGER (0..4398046511103),
+    referenceTime INTEGER (0..4398046511103),
+    termination ENUMERATED {isCancellation(0), isNegation(1)}
+}
+
+SituationContainer ::= SEQUENCE {
+    informationQuality INTEGER (0..7),
+    eventType CauseCode,
+    linkedCause CauseCode OPTIONAL
+}
+
+LocationContainer ::= SEQUENCE {
+    eventSpeed SEQUENCE {
+        speedValue REAL,
+        speedConfidence REAL
+    } OPTIONAL,
+    eventPositionHeading SEQUENCE {
+        headingValue INTEGER (0..3601),
+        headingConfidence INTEGER (1..127)
+    } OPTIONAL,
+    traces Traces
+}
+
+Traces ::= SEQUENCE SIZE (1..7) OF PathHistory
+
+PathHistory ::= SEQUENCE {
+    initialPosition ReferencePosition,
+    currencyPosition DeltaReferencePosition,
+    segmentCount INTEGER (1..32)
+}
+
+ReferencePosition ::= SEQUENCE {
+    latitude INTEGER (-900000000..900000001),
+    longitude INTEGER (-1800000000..1800000001),
+    positionConfidenceEllipse PosConfidenceEllipse
+}
+
+DeltaReferencePosition ::= SEQUENCE {
+    deltaLatitude INTEGER (-131072..131071),
+    deltaLongitude INTEGER (-131072..131071)
+}
+
+PosConfidenceEllipse ::= SEQUENCE {
+    semiMajorConfidence INTEGER (0..255),
+    semiMinorConfidence INTEGER (0..255),
+    semiMajorOrientation INTEGER (0..3601)
+}
+
+AlacarteContainer ::= SEQUENCE {
+    lanePosition INTEGER (-1..14) OPTIONAL,
+    impactReduction ImpactReductionContainer OPTIONAL
+}
+
+ImpactReductionContainer ::= SEQUENCE {
+    heightLonCarrLeft INTEGER (1..100) OPTIONAL,
+    heightLonCarrRight INTEGER (1..100) OPTIONAL,
+    posLonCarrLeft INTEGER (1..200) OPTIONAL,
+    posLonCarrRight INTEGER (1..200) OPTIONAL
+}
+
+CauseCode ::= INTEGER {reserved(0), trafficCondition(1), accident(2), roadworks(3), adverseWeatherCondition(6), hazardousLocation(9), rescueAndRecoveryWorkInProgress(15), adverseWeatherConditionAdhesion(6), hazardousLocationSurfaceCondition(9), hazardousLocationObstacleOnTheRoad(10), hazardousLocationAnimalOnTheRoad(11), humanPresenceOnTheRoad(12), wrongWayDriving(14), slowVehicle(26), dangerousEndOfQueue(27), vehicleBreakdown(91), postCrash(92), humanProblem(93), stationaryVehicle(94), emergencyVehicleApproaching(95), hazardousLocationDangerousCurve(96), collisionRisk(97), signalViolation(98), dangerousSituation(99)} (0..255)
+
+END

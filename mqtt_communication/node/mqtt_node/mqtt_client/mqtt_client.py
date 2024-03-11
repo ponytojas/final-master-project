@@ -1,7 +1,16 @@
-import json
 import logging
 from typing import List, Tuple, Dict
 import paho.mqtt.client as mqtt
+
+SUSCRIPTIONS = {
+    "vehicle": [
+        "v2x/vehicle/+/data",
+        "v2x/infrastructure/+"
+    ],
+    "walker": [
+        "v2x/infrastructure/+"
+    ]
+}
 
 
 class MQTTClient:
@@ -25,8 +34,10 @@ class MQTTClient:
     def on_message(self, client, userdata, message):
         if self.data_manager is None:
             return
-        decoded_message = self.data_manager.decode_cam_message(
-            message.payload)
+        topic = message.topic
+        schema = topic.split("/")[-1]
+        decoded_message = self.data_manager.decode_message(
+            message.payload, schema)
 
         if str(decoded_message['header']['stationID']) == self.client_id:
             return
@@ -38,11 +49,10 @@ class MQTTClient:
         self.client.loop_start()
 
     def subscribe(self, actor_type: str):
-        if actor_type == "vehicle":
-            self.client.subscribe("v2x/vehicle/+/data")
-            self.client.subscribe("v2x/infrastructure/cam")
-        elif actor_type == "walker":
-            self.client.subscribe("v2x/infrastructure/cam")
+        if actor_type not in SUSCRIPTIONS:
+            return
+        for topic in SUSCRIPTIONS[actor_type]:
+            self.client.subscribe(topic)
 
     def publish(self, topic: str, data: bytes):
         self.client.publish(topic, data)
