@@ -81,7 +81,8 @@ async def main(type: str = None):
     await asyncio.gather(carla_simulation(type))
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Your program description')
+    parser = argparse.ArgumentParser(
+        description='Select the type of actor to spawn in the simulation.')
     parser.add_argument('-t', '--type', type=str, choices=['vehicle', 'walker'], default=None,
                         help='Specify the type (vehicle or walker)')
 
