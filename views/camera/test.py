@@ -36,7 +36,8 @@ def draw_actors_on_image(image):
     camera_transform = camera.get_transform()
     camera_location = camera_transform.location
     actors = [actor for actor in world.get_actors()
-              if 'vehicle' in actor.type_id or 'walker' in actor.type_id or 'traffic_light' in actor.type_id]
+              #   if 'vehicle' in actor.type_id or 'walker' in actor.type_id or 'traffic_light' in actor.type_id]
+              if 'vehicle' in actor.type_id or 'walker' in actor.type_id]
 
     for actor in actors:
         actor_id = actor.id
