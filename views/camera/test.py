@@ -76,7 +76,7 @@ def image_callback(image):
     array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
     array = np.reshape(array, (image.height, image.width, 4))
     array = array[:, :, :3]
-    video_frame = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
+    video_frame = cv2.cvtColor(array, cv2.COLOR_BGR2BGRA)
     video_frame = draw_actors_on_image(
         video_frame)  # Draw vehicles on the image
     video_frame = cv2.resize(video_frame, (1200, 800))
