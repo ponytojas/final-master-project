@@ -1,0 +1,46 @@
+CAM DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+CAM ::= SEQUENCE {
+    header ItsPduHeader,
+    cam CoopAwareness
+}
+
+ItsPduHeader ::= SEQUENCE {
+    protocolVersion INTEGER (0..255),
+    messageID INTEGER (0..255),
+    stationID INTEGER (0..4294967295)
+}
+
+CoopAwareness ::= SEQUENCE {
+    generationDeltaTime INTEGER (0..65535),
+    camParameters CamParameters
+}
+
+CamParameters ::= SEQUENCE {
+    basicContainer BasicContainer
+}
+
+BasicContainer ::= SEQUENCE {
+    stationType INTEGER (0..255),
+    referencePosition ReferencePosition
+}
+
+ReferencePosition ::= SEQUENCE {
+    latitude INTEGER (-900000000..900000001),
+    longitude INTEGER (-1800000000..1800000001),
+    positionConfidenceEllipse PosConfidenceEllipse,
+    altitude Altitude
+}
+
+PosConfidenceEllipse ::= SEQUENCE {
+    semiMajorConfidence INTEGER (0..255),
+    semiMinorConfidence INTEGER (0..255),
+    semiMajorOrientation INTEGER (0..3601)
+}
+
+Altitude ::= SEQUENCE {
+    altitudeValue INTEGER (-100000..800001),
+    altitudeConfidence INTEGER (0..15)
+}
+
+END

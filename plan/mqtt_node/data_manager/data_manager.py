@@ -29,10 +29,6 @@ class DataManager:
         self.topic = f"v2x/{actor_type}/{self.mqtt_client.client_id}/cam"
         self.stationType = 5 if actor_type == "vehicle" else 1
         self.asn_parsers = compile_asn_files('./asn_files/')
-        self.graph = None
-
-    def set_graph(self, graph):
-        self.graph = graph
 
     def update_data(self, new_data: Dict):
         if self._data_deep_compare(new_data):

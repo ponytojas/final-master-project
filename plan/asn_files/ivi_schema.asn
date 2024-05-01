@@ -1,0 +1,361 @@
+IVI DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+IviStructure ::= SEQUENCE {
+    mandatory IVIManagementContainer,
+    optional SEQUENCE {
+        iviStatus IVIStatus OPTIONAL,
+        iviPOIs SEQUENCE (SIZE(1..16)) OF PolygonalLine OPTIONAL,
+        iviLayers SEQUENCE (SIZE(1..8)) OF IviLayer OPTIONAL,
+        glc GeographicLocationContainer OPTIONAL,
+        tmcLocations SEQUENCE (SIZE(1..16)) OF IviLocation OPTIONAL,
+        safetyTrailerTexts SEQUENCE (SIZE(1..8)) OF TractorTrailerText OPTIONAL
+    }
+}
+
+IVIManagementContainer ::= SEQUENCE {
+    serviceProviderId Provider,
+    iviIdentificationNumber INTEGER (0..16383),
+    timeStamp TimeStamp,
+    validFrom TimestampIts OPTIONAL,
+    validTo TimestampIts OPTIONAL,
+    connectedIviStructures SEQUENCE (SIZE(1..8)) OF IviIdentificationNumber OPTIONAL,
+    iviStatus IVIStatus OPTIONAL
+}
+
+Provider ::= SEQUENCE {
+    countryCode OCTET STRING (SIZE(2)),
+    providerIdentifier INTEGER (0..65535)
+}
+
+TimeStamp ::= SEQUENCE {
+    seconds TimestampIts,
+    microseconds INTEGER (0..999999)
+}
+
+TimestampIts ::= INTEGER (0..4398046511103)
+
+
+IviIdentificationNumber ::= INTEGER (0..16383)
+
+IVIStatus ::= SEQUENCE {
+    messageId INTEGER (0..255),
+    servicesAcked INTEGER (0..1) OPTIONAL,
+    ackReceived INTEGER (0..1) OPTIONAL,
+    counter INTEGER (0..255) OPTIONAL
+}
+
+PolygonalLine ::= SEQUENCE (SIZE(3..16)) OF ReferencePosition
+
+ReferencePosition ::= SEQUENCE {
+    latitude Latitude,
+    longitude Longitude,
+    positionConfidenceEllipse PosConfidenceEllipse OPTIONAL,
+    altitude Altitude OPTIONAL
+}
+
+Latitude ::= INTEGER (-900000000..900000001)
+
+Longitude ::= INTEGER (-1800000000..1800000001)
+
+PosConfidenceEllipse ::= SEQUENCE {
+    semiMajorConfidence SemiAxisLength,
+    semiMinorConfidence SemiAxisLength,
+    semiMajorOrientation HeadingValue
+}
+
+SemiAxisLength ::= INTEGER (0..4095)
+
+HeadingValue ::= INTEGER (0..3601)
+
+Altitude ::= SEQUENCE {
+    altitudeValue AltitudeValue,
+    altitudeConfidence AltitudeConfidence
+}
+
+AltitudeValue ::= INTEGER (-100000..800001)
+
+AltitudeConfidence ::= ENUMERATED {
+    alt-000-01(0),
+    alt-000-02(1),
+    alt-000-05(2),
+    alt-000-10(3),
+    alt-000-20(4),
+    alt-000-50(5),
+    alt-001-00(6),
+    alt-002-00(7),
+    alt-005-00(8),
+    alt-010-00(9),
+    alt-020-00(10),
+    alt-050-00(11),
+    alt-100-00(12),
+    alt-200-00(13),
+    outOfRange(14),
+    unavailable(15)
+}
+
+IviLayer ::= SEQUENCE {
+    nameOfLayer IA5String OPTIONAL,
+    iviLayerTheme IviLayerTheme OPTIONAL,
+    iviRCs SEQUENCE (SIZE(1..16)) OF IviRoadConfigurationContainer OPTIONAL,
+    iviPOIs SEQUENCE (SIZE(1..16)) OF PolygonalLine OPTIONAL
+}
+
+IviLayerTheme ::= INTEGER {
+    generalNote(1),
+    emergencyNote(2),
+    trafficFlowNote(3),
+    trafficFlowRestrictionNote(4),
+    roadClosure(5),
+    roadworks(6),
+    adverseCondition(7),
+    accidentNote(8),
+    trafficManagement(9),
+    driverAwarenessNote(10),
+    rerouting(11),
+    parkingNote(12),
+    other(255)
+} (0..255)
+
+IviRoadConfigurationContainer ::= SEQUENCE {
+    iviRCs SEQUENCE (SIZE(1..8)) OF IviRoadConfiguration,
+    zoneIds SEQUENCE (SIZE(1..8)) OF Zone OPTIONAL
+}
+
+IviRoadConfiguration ::= SEQUENCE {
+    iviConfType RoadConfigurationType OPTIONAL,
+    iviRoadSigns SEQUENCE (SIZE(1..32)) OF ViennaConvention OPTIONAL,
+    iviTexts SEQUENCE (SIZE(1..8)) OF Text OPTIONAL,
+    iviLaneConfigurations SEQUENCE (SIZE(1..8)) OF IviLane OPTIONAL,
+    iviLayoutConfigurations SEQUENCE (SIZE(1..8)) OF IviLayout OPTIONAL
+}
+
+RoadConfigurationType ::= INTEGER (0..7)
+
+ViennaConvention ::= INTEGER (0..65535)
+
+Text ::= SEQUENCE {
+    layoutComponentId INTEGER (1..8),
+    language Language OPTIONAL,
+    textContent UTF8String
+}
+
+Language ::= IA5String (SIZE(2))
+
+UTF8String ::= OCTET STRING (SIZE(1..128))
+
+IviLane ::= SEQUENCE {
+    laneNumber INTEGER (0..7),
+    iviLaneTypes SEQUENCE (SIZE(1..8)) OF IviLaneType,
+    iviLaneCharacteristics SEQUENCE (SIZE(1..8)) OF IviLaneCharacteristic OPTIONAL,
+    iviLaneManeuvers SEQUENCE (SIZE(1..8)) OF IviLaneManeuver OPTIONAL,
+    iviLaneRestrictions SEQUENCE (SIZE(1..8)) OF CompleteVehicleCharacteristics OPTIONAL,
+    iviLaneWidth IviLaneWidth OPTIONAL,
+    iviLaneOffset IviLaneOffset OPTIONAL
+}
+
+IviLaneType ::= BIT STRING {
+    other(0),
+    through(1),
+    acceleration(2),
+    deceleration(3),
+    leftShoulder(4),
+    rightShoulder(5),
+    leftLane(6),
+    rightLane(7),
+    merging(8),
+    diverging(9),
+    reserved(10),
+    hov(11),
+    emergency(12),
+    parking(13)
+} (SIZE (14))
+
+IviLaneCharacteristic ::= INTEGER {
+    other(0),
+    freeText(1),
+    arrow(2),
+    arrowAndBar(3),
+    bar(4),
+    noDrivingAllowed(5),
+    kerbsToCross(6),
+    noStopping(7),
+    noPassing(8),
+    noPassingForTrucks(9),
+    passingAllowed(10),
+    endOfRestriction(11),
+    laneReversed(12),
+    laneFreeToDriveOn(13),
+    lanes2AheadMergeLeft(14),
+    lanes2AheadMergeRight(15)
+} (0..15)
+
+IviLaneManeuver ::= INTEGER {
+    other(0),
+    straight(1),
+    rightTurn(2),
+    leftTurn(3),
+    uTurn(4),
+    rightLaneMustTurn(5),
+    leftLaneMustTurn(6),
+    keepInLane(7),
+    doNotChangeToThisLane(8),
+    useThisLaneOnly(9),
+    useAnyLane(10)
+} (0..10)
+
+CompleteVehicleCharacteristics ::= SEQUENCE {
+    iviVehicleCharacteristics VehicleCharacteristics,
+    iviVehicleCharacteristicsExtension VehicleCharacteristicsExtension OPTIONAL
+}
+
+VehicleCharacteristics ::= BIT STRING {
+    other(0),
+    publicTransport(1),
+    publicTransportWithStanding(2),
+    publicTransportWithSeating(3),
+    publicTransportWithSleeping(4),
+    publicTransportWithStandingAndSeating(5),
+    publicTransportWithSeatingAndSleeping(6),
+    publicTransportWithStandingSeatingAndSleeping(7),
+    lorry(8),
+    truck(9),
+    van(10),
+    trailer(11),
+    bus(12),
+    smallCar(13),
+    passengerCar(14),
+    taxi(15),
+    emergencyVehicle(16),
+    agriculturalVehicle(17),
+    carWithTrailer(18),
+    carWithCaravan(19),
+    vehicleWithCatalyticConverter(20),
+    vehicleWithoutCatalyticConverter(21),
+    vehicleWithoutTrailer(22),
+    vehicleWithoutCaravan(23),
+    vehicles2Plus1(24),
+    vehicles2Plus2(25),
+    vehicles3(26),
+    vehicles4Plus(27),
+    car(28),
+    motorbike(29),
+    moped(30),
+    bicycle(31)
+} (SIZE(32))
+
+VehicleCharacteristicsExtension ::= BIT STRING {
+    other(0),
+    vehicleWithoutSnowTyreOrChain(1),
+    constructionVehicle(2),
+    taxi(3),
+    articulatedVehicle(4),
+    exceptionalLoad(5),
+    milkFloat(6),
+    vehicle4x4(7),
+    lightGoodsVehicle(8),
+    heavyGoodsVehicle(9),
+    tanker(10),
+    allHazardousLoadsProhibited(11),
+    petrolTankerLoad(12),
+    explosivesLoad(13),
+    chemicalsLoad(14),
+    hazardousLoad(15),
+    abnormalLoad(16),
+    escortVehicle(17),
+    convoyVehicle(18),
+    vehicleWithSiren(19),
+    snowplough(20),
+    militaryVehicle(21),
+    overwidthVehicle(22),
+    vehicleWithoutSnowTyreOrChain2(23),
+    petrolTankerLoad2(24),
+    explosivesLoad2(25)
+} (SIZE(26))
+
+IviLaneWidth ::= INTEGER (0..1023)
+
+IviLaneOffset ::= INTEGER (-512..511)
+
+IviLayout ::= SEQUENCE {
+    iviLayoutType IviLayoutType OPTIONAL,
+    iviLayoutRestrictions SEQUENCE (SIZE(1..8)) OF CompleteVehicleCharacteristics OPTIONAL
+}
+
+IviLayoutType ::= ENUMERATED {
+    other(0),
+    noRestrictions(1),
+    straightRoad(2),
+    curves(3),
+    uphillRoad(4),
+    downhillRoad(5),
+    roughSurface(6),
+    slipperySurface(7),
+    narrowRoad(8),
+    roadworks(9),
+    alteredLayout(10),
+    notAllLanesAvailable(11),
+    laneReduced(12),
+    speedRestricted(13),
+    contraflow(14),
+    overtakingAllowed(15),
+    overtakingProhibited(16),
+    overtakingProhibitedForTrucks(17),
+    endOfProhibition(18),
+    closedPermanentlyForAllVehicles(19),
+    closedPermanentlyForTrucks(20)
+}
+
+Zone ::= SEQUENCE {
+    zoneId INTEGER (0..134217727),
+    laneNumber LaneNumber OPTIONAL,
+    zoneExtension INTEGER (0..255) OPTIONAL
+}
+
+LaneNumber ::= INTEGER (0..254)
+
+GeographicLocationContainer ::= CHOICE {
+    referencePosition ReferencePosition,
+    referencePositionTime ReferencePositionTime
+}
+
+ReferencePositionTime ::= SEQUENCE {
+    year Year,
+    month Month,
+    day Day,
+    hour Hour,
+    minute Minute,
+    second Second,
+    milliseconds Milliseconds OPTIONAL,
+    positionEstimate PositionEstimate
+}
+
+Year ::= INTEGER (0..4095)
+
+Month ::= INTEGER (0..12)
+
+Day ::= INTEGER (0..31)
+
+Hour ::= INTEGER (0..31)
+
+Minute ::= INTEGER (0..60)
+
+Second ::= INTEGER (0..65535)
+
+Milliseconds ::= INTEGER (0..999)
+
+PositionEstimate ::= SEQUENCE {
+    latitude Latitude,
+    longitude Longitude
+}
+
+IviLocation ::= SEQUENCE {
+    countryCode CountryCode,
+    tableReference INTEGER (0..65535),
+    locationReference IA5String (SIZE (1..32))
+}
+
+CountryCode ::= IA5String (SIZE (2))
+
+TractorTrailerText ::= UTF8String (SIZE (1..128))
+
+END

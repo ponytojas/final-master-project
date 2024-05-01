@@ -1,5 +1,4 @@
 from .vehicle import create_vehicle
-from .walker import create_walker
 import os
 
 
@@ -9,7 +8,3 @@ def spawn_actor(actor_type: str):
 
     if actor_type == 'vehicle':
         return create_vehicle(carla_host=carla_host, carla_port=carla_port)
-    if actor_type == 'test':
-        return create_vehicle(carla_host=carla_host, carla_port=carla_port, test=True)
-    else:
-        return create_walker(carla_host=carla_host, carla_port=carla_port)

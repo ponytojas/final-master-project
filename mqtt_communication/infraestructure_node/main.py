@@ -16,10 +16,7 @@ load_dotenv()
 async def carla_simulation():
 
     logging.debug("Starting carla_simulation")
-    client = carla.Client(os.getenv("CARLA_HOST"),
-                          int(os.getenv("CARLA_PORT")))
-    client.set_timeout(2.0)
-    world = client.get_world()
+
     logging.debug("Carla simulation started")
 
     node = InfrastructureNode(os.getenv("MQTT_HOST"),
