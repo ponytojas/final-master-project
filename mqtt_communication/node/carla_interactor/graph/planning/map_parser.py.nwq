@@ -1,0 +1,304 @@
+from .map_classes import Header, Road, Junction, Geometry
+from .map_classes import Elevation, Lane, LaneSection
+from .map_classes import Object, Signal, SignalReference, Validity
+from .map_classes import LaneOffset, LaneWidth, RoadMark
+from .map_classes import VectorLane, CornerLocal, Junction, Connection
+from .map_classes import LaneLinkJunction, ControllerJunction, VectorJunction
+
+from .landmark import Landmark, LandmarkRoad, LandmarkPose
+from .map_utils import ref_line_pose_2_global_pose, get_affecting_lanes
+from ..utils import CARLAEncoder
+import json
+
+import xml.etree.ElementTree as ET
+
+class MapParser:
+    def __init__(self, map_data, map_path=None, map_flag=False):
+        """
+        Args
+            map_data: (str) It can be given in two ways:
+                            0) Name of the map without extension, i.e. 'Town01'
+                            1) All map data saved as a string
+            map_path: (str) Path of the map files (if map_data is a name)
+            map_flag: (bool) 0) map_data in case 0
+                             1) map_data in case 1
+        """
+        if map_flag == False:
+            self.xodr_map = self._get_map(map_data, map_path)
+        else:
+            self.xodr_map = ET.fromstring(map_data)
+        self.header = self._get_header()
+        self.roads = self._get_roads()
+        self.road_ids = self._get_road_ids(self.roads)
+        self.junctions = self._get_junctions()
+        self.junction_ids = self._get_junction_ids(self.junctions)
+        self.landmarks = self._get_all_landmarks(self.roads)
+
+
+    def to_dict(self):
+        """
+        Return all map data as a dictionary
+        """
+        map_dict = {}
+        map_dict['header'] = self.header.__dict__
+        map_dict['roads'] = [road.__dict__ for road in self.roads]
+        map_dict['road_ids'] = self.road_ids
+        map_dict['junctions'] = [junction.__dict__ for junction in self.junctions]
+        map_dict['junction_ids'] = self.junction_ids
+        map_dict['landmarks'] = [landmark.__dict__ for landmark in self.landmarks]
+        return map_dict
+    
+    def to_json(self, path):
+        content = self.to_dict()
+        with open(path, 'w') as f:
+            json.dump(content, f, indent=4, cls=CARLAEncoder)
+
+        
+    def to_pickle(self, path):
+        """
+        Return all map data as a pickle file
+        """
+        import pickle
+        with open(path, 'wb') as f:
+            pickle.dump(self.to_dict(), f)
+
+    def _get_map(self, map_name, map_path):
+        """
+        Get xodr map that can be parsed as an XML file.
+
+        Args:
+            map_name: (string)
+            map_path: (string)
+
+        Returns:
+            xodr_map: (ElementTree) Parsed XML tree
+        """
+        xodr_path = f"{map_path}/{map_name}.xodr"
+        tree = ET.parse(xodr_path)
+        return tree.getroot()
+
+
+    def _get_header(self):
+        header_elem = self.xodr_map.find('header')
+        header = Header(
+            revMajor=header_elem.get('revMajor'),
+            revMinor=header_elem.get('revMinor'),
+            name=header_elem.get('name'),
+            version=header_elem.get('version'),
+            date=header_elem.get('date'),
+            north=header_elem.get('north'),
+            south=header_elem.get('south'),
+            east=header_elem.get('east'),
+            west=header_elem.get('west'),
+            vendor=header_elem.get('vendor')
+        )
+        return header
+
+    def _get_roads(self):
+        roads = []
+        for road_elem in self.xodr_map.findall('road'):
+            road = Road(
+                id=road_elem.get('id'),
+                junction=road_elem.get('junction')
+            )
+            road.length = float(road_elem.get('length', 0))
+            road.name = road_elem.get('name')
+            road.type = road_elem.get('type')
+            road.planView = self._get_plan_view(road_elem)
+            road.elevations = self._get_elevations(road_elem)
+            road.lanes = self._get_lanes(road_elem)
+            road.objects = self._get_objects(road_elem)
+            road.signals = self._get_signals(road_elem)
+            roads.append(road)
+        return roads
+
+    def _get_plan_view(self, road_elem):
+        planView = []
+        for geom_elem in road_elem.find('planView').findall('geometry'):
+            geometry = Geometry(
+                s=float(geom_elem.get('s')),
+                x=float(geom_elem.get('x')),
+                y=float(geom_elem.get('y')),
+                hdg=float(geom_elem.get('hdg')),
+                length=float(geom_elem.get('length'))
+            )
+            planView.append(geometry)
+        return planView
+
+    def _get_elevations(self, road_elem):
+        elevations = []
+        for elevation_elem in road_elem.find('elevationProfile').findall('elevation'):
+            elevation = Elevation(
+                s=float(elevation_elem.get('s')),
+                a=float(elevation_elem.get('a')),
+                b=float(elevation_elem.get('b')),
+                c=float(elevation_elem.get('c')),
+                d=float(elevation_elem.get('d'))
+            )
+            elevations.append(elevation)
+        return elevations
+
+    def _get_lanes(self, road_elem):
+        lanes = []
+        for lane_section_elem in road_elem.find('lanes').findall('laneSection'):
+            laneSection = LaneSection(
+                s=float(lane_section_elem.get('s'))
+            )
+            for lane_elem in lane_section_elem.findall('lane'):
+                lane = Lane(
+                    id=int(lane_elem.get('id')),
+                    type=lane_elem.get('type'),
+                    level=lane_elem.get('level') == 'true'
+                )
+                lane.width = self._get_lane_width(lane_elem)
+                lane.roadMark = self._get_road_marks(lane_elem)
+                lanes.append(lane)
+            laneSection.lanes = lanes
+        return lanes
+
+    def _get_lane_width(self, lane_elem):
+        widths = []
+        for width_elem in lane_elem.findall('width'):
+            width = LaneWidth(
+                sOffset=float(width_elem.get('sOffset')),
+                a=float(width_elem.get('a')),
+                b=float(width_elem.get('b')),
+                c=float(width_elem.get('c')),
+                d=float(width_elem.get('d'))
+            )
+            widths.append(width)
+        return widths
+
+    def _get_road_marks(self, lane_elem):
+        roadMarks = []
+        for roadMark_elem in lane_elem.findall('roadMark'):
+            roadMark = RoadMark(
+                sOffset=float(roadMark_elem.get('sOffset')),
+                type=roadMark_elem.get('type'),
+                material=roadMark_elem.get('material'),
+                color=roadMark_elem.get('color'),
+                width=float(roadMark_elem.get('width')),
+                laneChange=roadMark_elem.get('laneChange')
+            )
+            roadMarks.append(roadMark)
+        return roadMarks
+
+    def _get_objects(self, road_elem):
+        objects = []
+        for object_elem in road_elem.find('objects').findall('object'):
+            obj = Object(
+                id=object_elem.get('id'),
+                name=object_elem.get('name'),
+                s=float(object_elem.get('s')),
+                t=float(object_elem.get('t')),
+                zOffset=float(object_elem.get('zOffset')),
+                hdg=float(object_elem.get('hdg')),
+                pitch=float(object_elem.get('pitch')),
+                roll=float(object_elem.get('roll'))
+            )
+            objects.append(obj)
+        return objects
+
+    def _get_signals(self, road_elem):
+        signals = []
+        for signal_elem in road_elem.find('signals').findall('signal'):
+            signal = Signal(
+                id=signal_elem.get('id'),
+                name=signal_elem.get('name'),
+                s=float(signal_elem.get('s')),
+                t=float(signal_elem.get('t')),
+                dynamic=signal_elem.get('dynamic') == 'true',
+                orientation=signal_elem.get('orientation'),
+                zOffset=float(signal_elem.get('zOffset')),
+                country=signal_elem.get('country'),
+                type=signal_elem.get('type'),
+                subtype=signal_elem.get('subtype'),
+                value=signal_elem.get('value'),
+                unit=signal_elem.get('unit'),
+                height=float(signal_elem.get('height')),
+                width=float(signal_elem.get('width')),
+                text=signal_elem.get('text')
+            )
+            signal.references = self._get_signal_references(signal_elem)
+            signals.append(signal)
+        return signals
+
+    def _get_signal_references(self, signal_elem):
+        signalReferences = []
+        for signal_ref_elem in signal_elem.findall('signalReference'):
+            signalReference = SignalReference(
+                id=signal_ref_elem.get('id'),
+                s=float(signal_ref_elem.get('s')),
+                t=float(signal_ref_elem.get('t')),
+                orientation=signal_ref_elem.get('orientation')
+            )
+            signalReferences.append(signalReference)
+        return signalReferences
+
+    def _get_road_ids(self, roads):
+        return [road.id for road in roads]
+
+    def _get_junctions(self):
+        junctions = []
+        for junction_elem in self.xodr_map.findall('junction'):
+            junction = Junction(
+                id=junction_elem.get('id'),
+                name=junction_elem.get('name')
+            )
+            junction.connections = self._get_connections(junction_elem)
+            junction.controllers = self._get_controllers(junction_elem)
+            junction.laneLink = self._get_lane_links(junction_elem)
+            junctions.append(junction)
+        return junctions
+
+    def _get_connections(self, junction_elem):
+        connections = []
+        for connection_elem in junction_elem.findall('connection'):
+            connection = Connection(
+                id=connection_elem.get('id'),
+                incomingRoad=connection_elem.get('incomingRoad'),
+                connectingRoad=connection_elem.get('connectingRoad'),
+                contactPoint=connection_elem.get('contactPoint')
+            )
+            connection.laneLink = self._get_lane_link_junctions(connection_elem)
+            connections.append(connection)
+        return connections
+
+    def _get_lane_link_junctions(self, connection_elem):
+        laneLinks = []
+        for laneLink_elem in connection_elem.findall('laneLink'):
+            laneLink = LaneLinkJunction(
+                fromLane=laneLink_elem.get('from'),
+                toLane=laneLink_elem.get('to')
+            )
+            laneLinks.append(laneLink)
+        return laneLinks
+
+    def _get_controllers(self, junction_elem):
+        controllers = []
+        for controller_elem in junction_elem.findall('controller'):
+            controller = ControllerJunction(
+                id=controller_elem.get('id'),
+                type=controller_elem.get('type'),
+                sequence=controller_elem.get('sequence')
+            )
+            controllers.append(controller)
+        return controllers
+
+    def _get_lane_links(self, junction_elem):
+        laneLinks = []
+        for laneLink_elem in junction_elem.findall('laneLink'):
+            laneLink = LaneLinkJunction(
+                fromLane=laneLink_elem.get('from'),
+                toLane=laneLink_elem.get('to')
+            )
+            laneLinks.append(laneLink)
+        return laneLinks
+
+    def _get_junction_ids(self, junctions):
+        return [junction.id for junction in junctions]
+
+    def _get_all_landmarks(self, roads):
+        landmarks = []
+        # Implement landmark parsing based on roads
+        return landmarks

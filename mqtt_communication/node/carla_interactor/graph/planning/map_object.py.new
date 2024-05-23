@@ -1,0 +1,965 @@
+import math
+import logging
+import numpy as np
+from scipy.spatial import KDTree
+
+from .map_parser import MapParser
+from .waypoint import Waypoint
+from .builder_classes import Location
+from .map_utils import get_point_in_line, get_point_in_arc
+
+
+class MapObject(MapParser):
+    """
+        Args
+            map_data: (str) It can be given in two ways:
+                            0) Name of the map without extension, i.e. 'Town01' \
+                            1) All map data saved as a string 
+            map_path: (str) Path of the map files
+            map_flag: (bool) 0) map_data in case 0
+                             1) map data in case 1
+    """
+
+    def __init__(self, map_data, map_path, map_flag=0):
+        mp = MapParser(map_data, map_path, map_flag)
+
+
+        self.distance_between_waypoints = 0.2  # Distance in meters between
+        # waypoints that are generated
+        self.map_name = self._get_map_name()
+        self.map_waypoints = self.generate_waypoints(
+            self.roads, self.distance_between_waypoints)
+
+        self.map_locations_array = ([np.array((
+            wp.transform.location.x,
+            wp.transform.location.y,
+            wp.transform.location.z))
+            for wp in self.map_waypoints])
+        self.map_kdtree = KDTree(self.map_locations_array)
+
+    def _get_map_name(self):
+        """
+        Analyze the xodr map data and returns the name of the map.
+        This has been implemented for Carla Challenge 2021, where we
+        have the map_data in a string but we don't know to which map_name
+        corresponds.
+
+        For doing that, it checks some parameters previously known from 
+        the map.
+
+        Returns:
+            map_name: (str) name of the map
+        """
+        road_length_to_map = {
+            36: "Town01",
+            95: "Town02",
+            43: "Town03",
+            34: "Town04",
+            53: "Town05",
+            3: "Town06",
+            33: "Town07",
+            67: "Town10",
+            13: "Town10HD"
+        }
+
+        return road_length_to_map.get(int(self.roads[0].length), "UnknownMap")
+
+    def get_waypoint(self, x, y, z, project_to_road=True):
+        """
+        Returns the closest waypoint centered in a driving lane of a road.
+
+        Args:
+            x, y, z: (float, float, float) Coordinates of the point.
+            project_to_road (bool): 
+                True: Generates the waypoint centered in the closest
+                driving lane location.
+                False: Generates the waypoint in the same location.
+
+        Returns:
+            waypoint (Waypoint): The closest waypoint.
+        """
+        if project_to_road:
+            location_array = np.array([x, y, z])
+            closest_distance, closest_index = self.map_kdtree.query(
+                location_array, 1)
+            waypoint = self.map_waypoints[closest_index.numerator]
+        else:
+            location = Location(x, y, z)
+            waypoint = Waypoint(location)
+
+        return waypoint
+
+    def get_road(self, roads, road_id):
+        """
+        Get a road from a map.roads by its id.
+
+        Args:
+            roads: (list) List of Road objects.
+            road_id: (int) The ID of the road to retrieve.
+
+        Returns:
+            road: (Road) The road object with the given ID.
+
+        Raises:
+            ValueError: If the road with the given ID is not found.
+        """
+        road_dict = {road.id: road for road in roads}
+        try:
+            return road_dict[road_id]
+        except KeyError:
+            raise ValueError(
+                f"get_road Error: Road with ID {road_id} not found!")
+
+    def get_lane(self, road, lane_id, laneSectionValue):
+        """
+        Get a lane from a road by its ID.
+
+        Args:
+            road: (Road) The road containing the lane.
+            lane_id: (int) The ID of the lane.
+            laneSectionValue: (int or str) The lane section index or 'unknown'.
+
+        Returns:
+            lane: (Lane) The lane with the specified ID.
+
+        Raises:
+            ValueError: If the lane with the given ID is not found.
+        """
+        if laneSectionValue == 'unknown':
+            laneSection = 0 if lane_id < 0 else -1
+        else:
+            laneSection = laneSectionValue
+
+        for lane in road.lanes.laneSections[laneSection].right + road.lanes.laneSections[laneSection].left:
+            if lane.id == lane_id:
+                return lane
+
+        # logging.error(
+        #     f"get_lane Error: Lane with ID {lane_id} not found in the specified road and lane section!")
+
+    def get_lane_change(self, road, lane_id):
+        """
+        Returns if lane change is possible for this lane, depending on
+        the roadmark and if the left/right lane exists. 
+        Values for lane change are:
+            1) none
+            2) left
+            3) right
+            4) both
+        Args:
+            road    : (Road)
+            lane_id : (int)
+        Returns:
+            lane_change: (str)
+        Summary of How LaneChange works in XODR standard:
+        Whatever the travel direction of the current lane, the roadMark that must
+        be checked is:
+            - right lane change : current lane id      (current_lane)
+            - left lane change  : current lane id - 1  (decrement_lane)
+        """
+        def check_lane_change(lane):
+            if lane is not None and lane.type == "driving":
+                for roadMark in lane.roadMark:
+                    if roadMark.laneChange in {"both", "increase", "decrease"}:
+                        return roadMark.laneChange
+            return "none"
+
+        current_lane = self.get_lane(road, lane_id, 0)
+        decrement_lane = self.get_lane(road, lane_id - 1, 0)
+        increment_lane = self.get_lane(road, lane_id + 1, 0)
+
+        currentLane_laneChange = check_lane_change(current_lane)
+        decrementLane_laneChange = check_lane_change(decrement_lane)
+        incrementLane_laneChange = check_lane_change(increment_lane)
+
+        if lane_id < 0:
+            if incrementLane_laneChange in {"increase", "both"} and currentLane_laneChange in {"increase", "none"}:
+                return "left"
+            elif incrementLane_laneChange in {"decrease", "none"} and currentLane_laneChange in {"decrease", "both"}:
+                return "right"
+            elif incrementLane_laneChange in {"increase", "both"} and currentLane_laneChange in {"decrease", "both"}:
+                return "both"
+            else:
+                return "none"
+        elif lane_id > 0:
+            if currentLane_laneChange in {"increase", "both"} and decrementLane_laneChange in {"increase", "none"}:
+                return "right"
+            elif currentLane_laneChange in {"decrease", "none"} and decrementLane_laneChange in {"decrease", "both"}:
+                return "left"
+            elif currentLane_laneChange in {"increase", "both"} and decrementLane_laneChange in {"decrease", "both"}:
+                return "both"
+            else:
+                return "none"
+        return "none"
+
+    def get_junction(self, junctions, junction_id):
+        """
+        Get a junction from a map.junctions by its ID.
+
+        Args:
+            junctions: (list) List of Junction objects.
+            junction_id: (int) The ID of the junction to retrieve.
+
+        Returns:
+            junction: (Junction) The junction with the given ID.
+
+        Raises:
+            ValueError: If the junction with the given ID is not found.
+        """
+        junction_dict = {junction.id: junction for junction in junctions}
+        try:
+            return junction_dict[junction_id]
+        except KeyError:
+            raise ValueError(
+                f"get_junction Error: Junction with ID {junction_id} not found!")
+
+    def get_direction(self, road_id):
+        """
+        Get the driving direction of the road, positive or negative, 
+        according to the predecessor --> successor sequence.
+
+        Args:
+            road_id: (int) ID of the road.
+
+        Returns:
+            (str) '+' or '-' defining driving direction.
+
+        Raises:
+            ValueError: If the driving direction cannot be determined.
+        """
+        road = self.get_road(road_id)
+        first_lane_section = road.lanes.laneSections[0]
+
+        for lane in first_lane_section.right:
+            if lane.type == "driving" and lane.id < 0:
+                return "+"
+
+        for lane in first_lane_section.left:
+            if lane.type == "driving" and lane.id > 0:
+                return "-"
+
+        raise ValueError(
+            f"get_direction Error: Driving direction for road ID {road_id} cannot be determined!")
+
+    def xyz_to_roadlane(self, x, y, z):
+        """
+        Receives a location and gets its corresponding road and lane, because 
+        global path planning needs a road/lane tuple as input. If the location 
+        is not inside a lane/road, returns the closest one inside a lane/road.
+
+        Args:
+            x: (float) X-coordinate of the location.
+            y: (float) Y-coordinate of the location.
+            z: (float) Z-coordinate of the location.
+
+        Returns:
+            closer_roadlane: (tuple) Closest road/lane to the given location.
+        """
+        closer_waypoint = self.get_waypoint(x, y, z, project_to_road=True)
+        closer_roadlane = (closer_waypoint.road_id, closer_waypoint.lane_id)
+
+        return closer_roadlane
+
+    def get_initial_position(self, road, lane, side):
+        """
+        Returns the initial position of the road centered at the lane.
+
+        Args:
+            road: (Road) The road object.
+            lane: (Lane) The lane object.
+            side: (str) 'left' or 'right' indicating the side of the lane.
+
+        Returns:
+            location: (Location) The initial location centered at the lane.
+        """
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[0].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[0].a
+            return lane_width_offset
+
+        lane_section = road.lanes.laneSections[0]
+        lane_width_offset = calculate_lane_width_offset(
+            lane_section, lane.id, side)
+        lane_offset = (lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[0].a) if side == 'left' else \
+            (-lane_width_offset +
+             lane.width[0].a / 2 + road.lanes.laneOffset[0].a)
+
+        location = get_point_in_line(
+            road.planView[0].x,
+            road.planView[0].y,
+            0,
+            lane_offset,
+            road.planView[0].hdg + math.pi / 2
+        )
+        location.x = round(location.x, 3)
+        location.y = round(location.y, 3)
+        location.z = round(location.z, 3)
+
+        return location
+
+    def get_inverted_initial_position(self, road, lane, side):
+        """
+        Returns the last position of the road. It can be used to get the origin 
+        position for inverted roads.
+
+        Args:
+            road: (Road) The road object.
+            lane: (Lane) The lane object.
+            side: (str) 'left' or 'right' indicating the side of the lane.
+
+        Returns:
+            location: (Location) The last location centered at the lane.
+        """
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[0].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[0].a
+            return lane_width_offset
+
+        lane_section = road.lanes.laneSections[0]
+        lane_width_offset = calculate_lane_width_offset(
+            lane_section, lane.id, side)
+        lane_offset = (lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[0].a) if side == 'left' else \
+            (-lane_width_offset +
+             lane.width[0].a / 2 + road.lanes.laneOffset[0].a)
+
+        # Get location centered on the road
+        last_plan_view = road.planView[-1]
+        if last_plan_view.type == "line":
+            location_aux = get_point_in_line(
+                last_plan_view.x,
+                last_plan_view.y,
+                0,
+                last_plan_view.length,
+                last_plan_view.hdg
+            )
+        elif last_plan_view.type == "arc":
+            location_aux = get_point_in_arc(
+                last_plan_view.x,
+                last_plan_view.y,
+                0,
+                last_plan_view.length,
+                last_plan_view.curvature,
+                last_plan_view.hdg
+            )
+
+        # Apply offset
+        location = get_point_in_line(
+            location_aux.x,
+            location_aux.y,
+            0,
+            lane_offset,
+            last_plan_view.hdg + math.pi / 2
+        )
+
+        # Round values
+        location.x = round(location.x, 3)
+        location.y = round(location.y, 3)
+        location.z = round(location.z, 3)
+
+        return location
+
+    def get_lane_action(self, current, next):
+        """
+        Gets the type of action to do between the current (road, lane) and next 
+        (road, lane). The type of action can be:
+            - lanefollow
+            - changeright
+            - changeleft
+
+        Args:
+            current: (tuple) Current (road, lane).
+            next: (tuple) Next (road, lane).
+
+        Returns:
+            action: (str) Type of action to do.
+        """
+        current_road, current_lane = current
+        next_road, next_lane = next
+
+        if current_road == next_road:
+            if current_lane > 0:
+                action = "changeleft" if current_lane > next_lane else "changeright"
+            elif current_lane < 0:
+                action = "changeright" if current_lane > next_lane else "changeleft"
+            else:
+                action = "lanefollow"  # If the lane ID is 0, it's an invalid case, default to lanefollow
+        else:
+            action = "lanefollow"
+
+        return action
+
+    def get_topology_waypoints(self, roads):
+        """
+        *DEV: This function has not been properly tested*
+
+        Return a list of pairs of waypoints [[wp0, wp1], [wp2, wp3], ..., [wpn, wpn+1]] 
+        with in and out waypoints for every lane centered on the lane.
+
+        Args:
+            roads: (list) List of Road objects.
+
+        Returns:
+            topology_tuples: (list) List of tuples with in and out waypoints for each lane.
+        """
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[0].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[0].a
+            return lane_width_offset
+
+        def create_waypoint(x, y, z, hdg, lane_offset, road_id, lane_id, elevation_params, s):
+            location = get_point_in_line(
+                x, y, z, lane_offset, hdg + math.pi / 2)
+            location.z = self.calculate_elevation(*elevation_params, s, 0)
+            waypoint = Waypoint()
+            waypoint.transform.location = location
+            waypoint.road_id = road_id
+            waypoint.lane_id = lane_id
+            return waypoint
+
+        def handle_line(road, lane_offset, road_id, lane_id, elevation_params, s):
+            waypoint = Waypoint()
+            aux_location = get_point_in_line(
+                road.planView[-1].x, road.planView[-1].y, 0, lane_offset, road.planView[-1].hdg + math.pi / 2)
+            waypoint.transform.location = get_point_in_line(
+                aux_location.x, aux_location.y, 0, road.planView[-1].length, road.planView[-1].hdg)
+            waypoint.transform.location.z = self.calculate_elevation(
+                *elevation_params, road.planView[-1].length)
+            waypoint.road_id = road_id
+            waypoint.lane_id = lane_id
+            return waypoint
+
+        def handle_arc(road, lane_offset, road_id, lane_id, elevation_params, s):
+            radius = 1 / road.planView[-1].curvature
+            new_radius = radius - lane_offset
+            new_curvature = 1 / new_radius
+            k_arc = road.planView[-1].length / radius
+            new_length = k_arc * new_radius
+
+            waypoint = Waypoint()
+            aux_location = get_point_in_line(
+                road.planView[-1].x, road.planView[-1].y, 0, lane_offset, road.planView[-1].hdg + math.pi / 2)
+            waypoint.transform.location = get_point_in_arc(
+                aux_location.x, aux_location.y, 0, new_length, new_curvature, road.planView[-1].hdg)
+            waypoint.transform.location.z = self.calculate_elevation(
+                *elevation_params, road.planView[-1].length)
+            waypoint.road_id = road_id
+            waypoint.lane_id = lane_id
+            return waypoint
+
+        topology_tuples = []
+
+        for road in roads:
+            for side in ['left', 'right']:
+                lane_section = road.lanes.laneSections[0]
+                lanes = lane_section.left if side == 'left' else lane_section.right
+
+                for lane in lanes:
+                    if lane.type == "driving":
+                        lane_width_offset = calculate_lane_width_offset(
+                            lane_section, lane.id, side)
+                        lane_offset = (lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[0].a) if side == 'left' else \
+                            (-lane_width_offset +
+                             lane.width[0].a / 2 + road.lanes.laneOffset[0].a)
+
+                        waypoint_tuple = []
+                        elevation_params = [road.elevationProfile[0].a, road.elevationProfile[0].b,
+                                            road.elevationProfile[0].c, road.elevationProfile[0].d, road.elevationProfile[0].s]
+
+                        waypoint_lane_origin_center = create_waypoint(
+                            road.planView[0].x, road.planView[0].y, 0, road.planView[0].hdg, lane_offset,
+                            road.id, lane.id, elevation_params, 0)
+                        waypoint_tuple.append(waypoint_lane_origin_center)
+
+                        if road.planView[-1].type == "line":
+                            waypoint_lane_end_center = handle_line(
+                                road, lane_offset, road.id, lane.id, elevation_params, road.planView[-1].length)
+                        elif road.planView[-1].type == "arc":
+                            waypoint_lane_end_center = handle_arc(
+                                road, lane_offset, road.id, lane.id, elevation_params, road.planView[-1].length)
+
+                        waypoint_tuple.insert(0, waypoint_lane_end_center)
+                        topology_tuples.append(waypoint_tuple)
+
+        return topology_tuples
+
+    def generate_waypoints(self, roads, distance):
+        """
+        Generate waypoints centered in every driving lane given a distance.
+
+        Args:
+            roads   : (list) List of the Road objects of the map.
+            distance: (int)  Distance in meters between waypoints that 
+                            are generated.
+        """
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[-1].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[-1].a
+            return lane_width_offset
+
+        def create_waypoint(geometry, lane_offset, road, lane):
+            waypoint = Waypoint()
+            waypoint.s = geometry.s
+            waypoint.transform.location = get_point_in_line(
+                geometry.x, geometry.y, 0, lane_offset, geometry.hdg + math.pi / 2)
+            waypoint.transform.location.z = self.calculate_elevationProfile(
+                road.elevationProfile, waypoint.s)
+            waypoint.transform.rotation.yaw = (
+                geometry.hdg) * (180 / math.pi) + 90
+            waypoint.lane_width = lane.width[0].a
+            waypoint.road_id = road.id
+            waypoint.lane_id = lane.id
+            waypoint.junction = road.junction
+            waypoint.vmax = road.type.speed.max
+            waypoint.vunit = road.type.speed.unit
+            waypoint.n_lanes, waypoint.lane_position = waypoint.get_lane_position(
+                lane.id, road)
+            waypoint.lane_change = self.get_lane_change(road, lane.id)
+            return waypoint
+
+        def generate_waypoints_for_geometry(geometry, lane_offset, road, lane, distance):
+            waypoints = []
+            n = int(geometry.length / distance)
+
+            for n_dist in range(n):
+                waypoint = Waypoint()
+                waypoint.s = geometry.s + n_dist * distance
+                if geometry.type == "line":
+                    waypoint.transform.location = get_point_in_line(
+                        geometry.x, geometry.y, 0, lane_offset, geometry.hdg)
+                elif geometry.type == "arc":
+                    radius = 1 / geometry.curvature
+                    new_radius = radius - lane_offset
+                    new_curvature = 1 / new_radius
+                    k_arc = geometry.length / radius
+                    new_length = k_arc * new_radius
+                    waypoint.transform.location = get_point_in_arc(
+                        geometry.x, geometry.y, 0, n_dist * distance, new_curvature, geometry.hdg)
+                    waypoint.transform.rotation.yaw = (
+                        geometry.hdg + (n_dist * distance) * new_curvature) * (180 / math.pi) + 90
+
+                waypoint.transform.location.z = self.calculate_elevationProfile(
+                    road.elevationProfile, waypoint.s)
+                waypoint.lane_width = lane.width[0].a
+                waypoint.road_id = road.id
+                waypoint.lane_id = lane.id
+                waypoint.junction = road.junction
+                waypoint.vmax = road.type.speed.max
+                waypoint.vunit = road.type.speed.unit
+                waypoint.n_lanes, waypoint.lane_position = waypoint.get_lane_position(
+                    lane.id, road)
+                waypoint.lane_change = self.get_lane_change(road, lane.id)
+                waypoints.append(waypoint)
+
+            return waypoints
+
+        all_waypoints = []
+
+        for road in roads:
+            for side in ['left', 'right']:
+                lane_section = road.lanes.laneSections[-1]
+                lanes = lane_section.left if side == 'left' else lane_section.right
+
+                for lane in lanes:
+                    if lane.type == "driving":
+                        lane_width_offset = calculate_lane_width_offset(
+                            lane_section, lane.id, side)
+                        lane_offset = (lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[-1].a) if side == 'left' else \
+                            (-lane_width_offset +
+                             lane.width[0].a / 2 + road.lanes.laneOffset[-1].a)
+
+                        for geometry in road.planView:
+                            initial_waypoint = create_waypoint(
+                                geometry, lane_offset, road, lane)
+                            all_waypoints.append(initial_waypoint)
+                            waypoints = generate_waypoints_for_geometry(
+                                geometry, lane_offset, road, lane, distance)
+                            all_waypoints.extend(waypoints)
+
+        return all_waypoints
+
+    def generate_waypoints_in_lane(self, road, lane, distance):
+        """
+        Generate waypoints centered in a driving lane given a distance.
+
+        Args:
+            road    : (Road) The road object.
+            lane    : (Lane) The lane object.
+            distance: (int)  Distance in meters between waypoints that are generated.
+
+        Returns:
+            waypoints: (list) List of generated waypoints.
+        """
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[0].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[0].a
+            return lane_width_offset
+
+        def create_waypoint(geometry, lane_offset, road, lane, s):
+            waypoint = Waypoint()
+            waypoint.s = s
+            if geometry.type == "line":
+                waypoint.transform.location = get_point_in_line(
+                    geometry.x, geometry.y, 0, lane_offset, geometry.hdg + math.pi / 2)
+            elif geometry.type == "arc":
+                radius = 1 / geometry.curvature
+                new_radius = radius - lane_offset
+                new_curvature = 1 / new_radius
+                k_arc = geometry.length / radius
+                new_length = k_arc * new_radius
+                waypoint.transform.location = get_point_in_arc(
+                    geometry.x, geometry.y, 0, s - geometry.s, new_curvature, geometry.hdg)
+                waypoint.transform.rotation.yaw = (
+                    geometry.hdg + (s - geometry.s) * new_curvature) * (180 / math.pi) + 90
+
+            waypoint.transform.location.z = self.calculate_elevationProfile(
+                road.elevationProfile, waypoint.s)
+            waypoint.transform.rotation.yaw = (
+                geometry.hdg) * (180 / math.pi) + 90
+            waypoint.lane_width = lane.width[0].a
+            waypoint.road_id = road.id
+            waypoint.lane_id = lane.id
+            waypoint.junction = road.junction
+            waypoint.vmax = road.type.speed.max
+            waypoint.vunit = road.type.speed.unit
+            waypoint.n_lanes, waypoint.lane_position = waypoint.get_lane_position(
+                lane.id, road)
+            waypoint.lane_change = self.get_lane_change(road, lane.id)
+            return waypoint
+
+        waypoints = []
+        if lane.id > 0:  # left side --> road s reference line is inverted
+            side = 'left'
+        elif lane.id < 0:  # right side
+            side = 'right'
+        else:
+            return waypoints
+
+        lane_section = road.lanes.laneSections[-1] if len(
+            road.lanes.laneSections) > 1 else road.lanes.laneSections[0]
+        lane_width_offset = calculate_lane_width_offset(
+            lane_section, lane.id, side)
+        lane_offset = lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[-1].a if len(road.lanes.laneSections) > 1 else \
+            lane_width_offset - lane.width[0].a / \
+            2 + road.lanes.laneOffset[0].a
+
+        for geometry in (reversed(road.planView) if lane.id > 0 else road.planView):
+            n = int(geometry.length / distance)
+            for n_dist in (range(n, -1, -1) if lane.id > 0 else range(n)):
+                s = geometry.s + (n_dist * distance if lane.id <
+                                  0 else geometry.length - n_dist * distance)
+                waypoint = create_waypoint(
+                    geometry, lane_offset, road, lane, s)
+                waypoints.append(waypoint)
+
+        return waypoints
+
+    def generate_previous_waypoints_until_lane_start(self, road, lane, distance, s):
+        """
+        Generate waypoints centered in a driving lane given a distance, from start to s.
+
+        Args:
+            road    : (Road) The road object.
+            lane    : (Lane) The lane object.
+            distance: (int)  Distance in meters between waypoints that are generated.
+            s       : (float) Starting position for generating waypoints.
+
+        Returns:
+            waypoints: (list) List of generated waypoints.
+        """
+
+        def calculate_lane_width_offset(lane_section, lane_id, side):
+            lane_width_offset = 0
+            if side == 'left':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.left[-1 - i].width[0].a
+            elif side == 'right':
+                for i in range(abs(lane_id)):
+                    lane_width_offset += lane_section.right[i].width[0].a
+            return lane_width_offset
+
+        def create_waypoint(geometry, lane_offset, road, lane, s, n_dist):
+            waypoint = Waypoint()
+            waypoint.s = s
+            if geometry.type == "line":
+                waypoint.transform.location = get_point_in_line(
+                    geometry.x, geometry.y, 0, lane_offset, geometry.hdg + math.pi / 2)
+            elif geometry.type == "arc":
+                radius = 1 / geometry.curvature
+                new_radius = radius - lane_offset
+                new_curvature = 1 / new_radius
+                waypoint.transform.location = get_point_in_arc(
+                    geometry.x, geometry.y, 0, s - geometry.s + (n_dist * distance), new_curvature, geometry.hdg)
+                waypoint.transform.rotation.yaw = (
+                    geometry.hdg + (s - geometry.s) * new_curvature) * (180 / math.pi) + 90
+
+            waypoint.transform.location.z = self.calculate_elevationProfile(
+                road.elevationProfile, waypoint.s)
+            waypoint.transform.rotation.yaw = (
+                geometry.hdg) * (180 / math.pi) + 90
+            waypoint.lane_width = lane.width[0].a
+            waypoint.road_id = road.id
+            waypoint.lane_id = lane.id
+            waypoint.junction = road.junction
+            waypoint.vmax = road.type.speed.max
+            waypoint.vunit = road.type.speed.unit
+            waypoint.n_lanes, waypoint.lane_position = waypoint.get_lane_position(
+                lane.id, road)
+            waypoint.lane_change = self.get_lane_change(road, lane.id)
+            return waypoint
+
+        def generate_waypoints_for_geometry(geometry, lane_offset, road, lane, s, is_inverted):
+            waypoints = []
+            n = int(geometry.length / distance)
+            for n_dist in (range(n, -1, -1) if is_inverted else range(n)):
+                waypoint = create_waypoint(
+                    geometry, lane_offset, road, lane, s, n_dist)
+                waypoints.append(waypoint)
+            return waypoints
+
+        waypoints = []
+        side = 'left' if lane.id > 0 else 'right'
+
+        lane_section = road.lanes.laneSections[-1] if len(
+            road.lanes.laneSections) > 1 else road.lanes.laneSections[0]
+        lane_width_offset = calculate_lane_width_offset(
+            lane_section, lane.id, side)
+        lane_offset = lane_width_offset - lane.width[0].a / 2 + road.lanes.laneOffset[-1].a if len(road.lanes.laneSections) > 1 else \
+            lane_width_offset - lane.width[0].a / \
+            2 + road.lanes.laneOffset[0].a
+
+        is_inverted = lane.id > 0
+        geometry_range = (reversed(range(len(road.planView)))
+                          if is_inverted else range(len(road.planView)))
+
+        for i in geometry_range:
+            geometry = road.planView[i]
+            if (is_inverted and s > geometry.s) or (not is_inverted and s <= geometry.s + geometry.length):
+                waypoints += generate_waypoints_for_geometry(
+                    geometry, lane_offset, road, lane, s, is_inverted)
+
+        return waypoints
+
+    def calculate_elevation(self, a, b, c, d, s_0, s):
+        """
+        Return elevation (inertial z) at a given position (knowing the elevationProfile)
+        """
+        ds = s - s_0
+        elevation = a + b*ds + c*ds**2 + d*ds**3
+        return elevation
+
+    def calculate_elevationProfile(self, elevationProfile: list, s: float) -> float:
+        """
+        Calculate the elevation (inertial z) at a given position without knowing which specific elevation profile to use.
+
+        Args:
+            elevationProfile (list): List of elevation profile segments, each with attributes `a`, `b`, `c`, `d`, and `s`.
+            s (float): Position at which to calculate the elevation.
+
+        Returns:
+            float: The calculated elevation at position s.
+        """
+        if elevationProfile:
+            for i in range(len(elevationProfile)):
+                if elevationProfile[i].s > s:
+                    break
+            else:
+                i = len(elevationProfile)
+
+            if i == len(elevationProfile):
+                profile = elevationProfile[-1]
+            else:
+                profile = elevationProfile[i - 1]
+
+            elevation = self.calculate_elevation(
+                profile.a, profile.b, profile.c, profile.d, profile.s, s)
+            return elevation
+        else:
+            raise ValueError("Elevation profile is empty.")
+
+    def get_road_by_id(self, road_id: int):
+        """
+        Get a specific road from self.roads by its id.
+
+        Args:
+            road_id (int): The ID of the road to retrieve.
+
+        Returns:
+            Road: The road with the given ID.
+
+        Raises:
+            ValueError: If the road with the given ID is not found.
+        """
+        for road in self.roads:
+            if road.id == road_id:
+                return road
+        raise ValueError(
+            f"get_road_by_id Error: Road with ID {road_id} not found!")
+
+    def get_lane_by_id(self, road_id, lane_id, lane_section):
+        """
+        Get a specific lane from a road by its id
+
+        Args:
+            road_id: (int) ID of the road containing the lane
+            lane_id: (int) ID of the lane to be retrieved
+            lane_section: (int) or (str) 'unknown', section of the lane
+
+        Returns: 
+            lane: (Lane) The lane object if found, otherwise None
+        """
+        road = self.get_road_by_id(road_id)
+        if not road:
+            raise ValueError(f"Road with ID {road_id} not found.")
+
+        if lane_section == 'unknown':
+            lane_section = 0 if lane_id < 0 else -1
+
+        try:
+            lane_section_obj = road.lanes.laneSections[lane_section]
+        except IndexError:
+            raise ValueError(
+                f"Lane section {lane_section} not found in road {road_id}.")
+
+        lanes = lane_section_obj.right + lane_section_obj.left
+        for lane in lanes:
+            if lane.id == lane_id:
+                return lane
+
+        raise ValueError(
+            f"Lane with ID {lane_id} not found in road {road_id} lane section {lane_section}.")
+
+    def get_junction_by_id(self, junction_id):
+        """
+        Get a specific junction from self.junctions by its id
+
+        Args:
+            junction_id: (int) ID of the junction to be retrieved
+
+        Returns:
+            junction: (Junction) The junction object if found
+
+        Raises:
+            ValueError: If the junction with the given ID is not found
+        """
+        for junction in self.junctions:
+            if junction.id == junction_id:
+                return junction
+
+        raise ValueError(f"Junction with ID {junction_id} not found.")
+
+    def get_lane_change_by_id(self, road_id, lane_id):
+        """
+        Returns if lane change is possible for this lane, depending on
+        the roadmark and if the left/right lane exists.
+
+        Values for lane change are:
+            1) None
+            2) Left
+            3) Right
+            4) Both
+
+        Args:
+            road_id : (int) ID of the road
+            lane_id : (int) ID of the lane
+
+        Returns:
+            lane_change: (str)
+
+        Summary of How LaneChange works in XODR standard:
+        Whatever the travel direction of the current lane, the roadMark that
+        must be checked is:
+            - right lane change : current lane id      (current_lane)
+            - left lane change  : current lane id - 1  (decrement_lane)
+        """
+
+        def get_lane_change_direction(lane):
+            """Helper function to determine lane change direction."""
+            if lane is not None and lane.type == "driving":
+                for road_mark in lane.roadMark:
+                    if road_mark.laneChange in ["both", "increase", "decrease"]:
+                        return road_mark.laneChange
+            return "none"
+
+        current_lane = self.get_lane_by_id(road_id, lane_id, 0)
+        left_lane = self.get_lane_by_id(road_id, lane_id - 1, 0)
+        right_lane = self.get_lane_by_id(road_id, lane_id + 1, 0)
+
+        current_lane_change = get_lane_change_direction(current_lane)
+        left_lane_change = get_lane_change_direction(left_lane)
+        right_lane_change = get_lane_change_direction(right_lane)
+
+        if lane_id < 0:  # Positive travel direction
+            if ((right_lane_change in ["increase", "both"]) and
+                    (current_lane_change in ["increase", "none"])):
+                return "left"
+
+            if ((right_lane_change in ["decrease", "none"]) and
+                    (current_lane_change in ["decrease", "both"])):
+                return "right"
+
+            if ((right_lane_change in ["increase", "both"]) and
+                    (current_lane_change in ["decrease", "both"])):
+                return "both"
+
+        elif lane_id > 0:  # Negative travel direction
+            if ((current_lane_change in ["increase", "both"]) and
+                    (left_lane_change in ["increase", "none"])):
+                return "right"
+
+            if ((current_lane_change in ["decrease", "none"]) and
+                    (left_lane_change in ["decrease", "both"])):
+                return "left"
+
+            if ((current_lane_change in ["increase", "both"]) and
+                    (left_lane_change in ["decrease", "both"])):
+                return "both"
+
+        return "none"
+
+    def get_affecting_landmarks(self, waypoint, threshold_distance):
+        """
+        Get landmarks affecting a given waypoint within a threshold distance.
+
+        Args:
+            waypoint: (Waypoint) The waypoint to check against.
+            threshold_distance: (float) The distance threshold.
+
+        Returns:
+            affecting_landmarks: (list) List of landmarks affecting the waypoint.
+        """
+        affecting_landmarks = []
+        
+        for landmark in self.landmarks:
+            for road in landmark.affecting_roads:
+                if waypoint.road_id == road.road_id and waypoint.lane_id in road.lanes:
+                    distance = abs(waypoint.s - road.pose.s)
+                    if distance < threshold_distance:
+                        affecting_landmarks.append(landmark)
+                        
+        return affecting_landmarks
+

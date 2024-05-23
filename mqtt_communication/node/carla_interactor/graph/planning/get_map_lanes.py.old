@@ -1,0 +1,63 @@
+import math
+import numpy as np
+import Quaternion as Quaternion
+
+from .monitor_classes import Node3D
+
+
+def get_lanes_points(waypoint_list, rgb=[0, 0, 0]):
+    """
+    Get markers to represent map topology defined by every lane.
+
+    Args:
+        waypoint_list: List of waypoints centered in every lane of the map
+            at a given distance.
+
+    Returns:
+        points: List of points defininf every lane of the map
+    """
+
+    map_points = []
+
+    for waypoint in waypoint_list:
+        node_r = Node3D()
+        node_l = Node3D()
+
+        yaw = math.radians(waypoint.transform.rotation.yaw)
+        distance = waypoint.lane_width/2
+
+        k = -1
+        if waypoint.lane_id < 0:
+            k = 1
+
+        node_r.x = waypoint.transform.location.x + math.cos(yaw)*distance*(-k)
+        node_r.y = waypoint.transform.location.y - math.sin(yaw)*distance*k
+        node_r.z = waypoint.transform.location.z
+
+        node_l.x = waypoint.transform.location.x - math.cos(yaw)*distance*(-k)
+        node_l.y = waypoint.transform.location.y + math.sin(yaw)*distance*k
+        node_l.z = waypoint.transform.location.z
+
+        map_points.append(node_r)
+        map_points.append(node_l)
+
+    return map_points
+
+
+def euler_to_quaternion(roll, pitch, yaw):
+    """
+    Return the orientation of our ego-vehicle in quaternion based on Euler angles (Roll = x, Pitch = y, Yaw = z)
+    """
+    roll = math.radians(roll)
+    pitch = math.radians(pitch)
+    yaw = math.radians(yaw)
+    qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - \
+        np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+    qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + \
+        np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
+    qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - \
+        np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
+    qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + \
+        np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+    q = Quaternion(qx, qy, qz, qw)
+    return q

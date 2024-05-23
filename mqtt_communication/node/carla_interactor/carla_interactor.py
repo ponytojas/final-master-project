@@ -11,12 +11,12 @@ from math import sqrt, pi, cos, sin, atan2, radians
 from mqtt_node.mqtt_client import MQTTClient
 from mqtt_node.data_manager import DataManager
 from carla_interactor.spawn_actor import spawn_actor
-from carla_interactor.create_graph import create_graph
+from carla_interactor.create_planner import create_planner
 from carla_interactor.graph.utils import find_shortest_path, find_nearest_node
 from carla_interactor.control import ControlPose, TrackingController
 
-START_LOCATION = {'x': 87.623, 'y': 12.967, 'z': 0.599}
-END_LOCATION = {'x': -21.6, 'y': 130, 'z': 0.5}
+START_LOCATION = {'x': -87.623, 'y': -12.967, 'z': 0.599}
+END_LOCATION = {'x': -21.6, 'y': -130, 'z': 0.5}
 
 
 
@@ -41,7 +41,7 @@ class CarlaInteractor:
 
         self.actor, self.ai_controller, self.world = spawn_actor(self.actor_type)
 
-        self.graph, self.waypoints_locations = create_graph(self.world.get_map())
+        self.planner = create_planner(self.world.get_map())
 
         self.initial_point_id = find_nearest_node(self.graph, START_LOCATION['x'], START_LOCATION['y'], START_LOCATION['z'])
         self.final_point_id = find_nearest_node(self.graph, END_LOCATION['x'], END_LOCATION['y'], END_LOCATION['z'])
@@ -80,24 +80,42 @@ class CarlaInteractor:
 
     def follow_route(self):
         route = find_shortest_path(self.graph, self.initial_point_id, self.final_point_id)
-        MIN_DIST = 3.0
+        logging.debug(f"Route: {route}")
+
+        MIN_DIST = 1.0
         spline_waypoints_route = []
         v_road = []
+        aux = []
         
         st_time = time.time()
         prev_waypoint = self.waypoints_locations[route[0]]
 
         for i in range(1, len(route)):
             waypoint = self.waypoints_locations[route[i]]
+            aux.append(waypoint)
             dist = sqrt(pow(waypoint['x'] - prev_waypoint['x'], 2) + pow(waypoint['y'] - prev_waypoint['y'], 2))
 
             if dist > MIN_DIST:
-                aux_pose = ControlPose(waypoint['x'], waypoint['y'], waypoint['z'], radians(waypoint['transform'].rotation.yaw))
+                aux_pose = ControlPose(waypoint['x'], -waypoint['y'], waypoint['z'], radians(waypoint['transform'].rotation.yaw))
                 spline_waypoints_route.append(aux_pose)
                 v_road.append(14)
                 prev_waypoint = waypoint
 
+        # Plot x and y from aux list with matplotlib
+        # Instead of points plot with indexes
+        import matplotlib.pyplot as plt
+        x = [i['x'] for i in aux]
+        y = [i['y'] for i in aux]
+
+        for i, txt in enumerate(range(len(x))):
+            plt.annotate(txt, (x[i], y[i]))
+        plt.plot(x, y, 'ro')
+        plt.show()
+
+
         self.tracking_controller.trajectory_spline_interpolation(spline_waypoints_route)
+
+
 
         sp_list = []
         for i, coef in enumerate(self.tracking_controller.spline_coeffs):
@@ -107,7 +125,7 @@ class CarlaInteractor:
             sp_list.extend(np.column_stack((x_aux, y_aux)))
         
         
-        V_MAX = 10
+        V_MAX = 7
         self.tracking_controller.velocity_profile_generation(v_road, V_MAX)
         self.tracking_controller.stop_requested = False
 
@@ -153,6 +171,7 @@ class CarlaInteractor:
             # Control lateral
             self.tracking_controller.control_move()
             Ulqr = self.tracking_controller.cmd_vel.w
+            # Ulqr = -Ulqr
 
             # Control longitudinal
             v_ref = self.tracking_controller.cmd_vel.v
