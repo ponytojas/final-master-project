@@ -23,22 +23,17 @@ def plot_graph(graph):
     
     :param graph: networkx graph object
     """
-    # Position nodes using a layout algorithm (like spring layout)
-    pos = nx.spring_layout(graph)
+    pos = nx.spring_layout(graph, k=0.5)  # You can tweak the value of 'k' for better distribution
     
-    # Draw the nodes and edges with labels
-    nx.draw_networkx_nodes(graph, pos, node_size=700)
+    nx.draw_networkx_nodes(graph, pos, node_size=400)
     nx.draw_networkx_edges(graph, pos)
     
-    # Edge labels: displaying the weights
-    edge_labels = nx.get_edge_attributes(graph, 'weight')  # Assuming 'weight' is the attribute for edge weights
-    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels)
+    edge_labels = nx.get_edge_attributes(graph, 'weight')
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, font_size=5)
     
-    # Node labels: displaying the node IDs with their coordinates (optional)
     node_labels = {node: str(node) for node in graph.nodes()}
-    nx.draw_networkx_labels(graph, pos, labels=node_labels)
+    nx.draw_networkx_labels(graph, pos, labels=node_labels, font_size=7)
     
-    # Set the title and show the plot
     plt.title('Graph Visualization with Nodes and Weights')
     plt.axis('off')  # Turn off the axis
     plt.show()

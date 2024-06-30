@@ -63,6 +63,8 @@ class CarlaInteractor:
 
         self.GRP = GlobalRoutePlanner(self.map, 0.25)
         self.graph = add_weights_to_edges(self.GRP._graph)
+
+        # plot_graph(self.graph)
  
         self.actor, self.ai_controller, self.world = spawn_actor(self.actor_type)
 
@@ -77,6 +79,8 @@ class CarlaInteractor:
 
         self.final_point = carla.Location(END_LOCATION['x'], END_LOCATION['y'], END_LOCATION['z'])
         self.current_point = self.initial_point
+
+        self.agent.path_search(self.initial_point.x, self.initial_point.y, self.initial_point.z, self.final_point.x, self.final_point.y, self.final_point.z)
         self.agent.set_destination(self.final_point)
 
 

@@ -29,7 +29,7 @@ class BasicAgentExtended(BasicAgent):
 
     def localize(self, x, y, z):
         location = carla.Location(x=x, y=y, z=z)
-        waypoint = map.get_waypoint(location)
+        waypoint = self._map.get_waypoint(location)
         edge = None
         try:
             edge = self._road_id_to_edge[waypoint.road_id][waypoint.section_id][waypoint.lane_id]
@@ -37,19 +37,19 @@ class BasicAgentExtended(BasicAgent):
             pass
         return edge
 
-
     def distance_heuristic(self, n1, n2):
         l1 = np.array(self._graph.nodes[n1]['vertex'])
         l2 = np.array(self._graph.nodes[n2]['vertex'])
         return np.linalg.norm(l1-l2)
 
     def path_search(self, x1, y1, z1, x2, y2, z2):
-        start, end = self.localize(map, self._road_id_to_edge, x1, y1, z1), self.localize(map, self._road_id_to_edge, x2, y2, z2)
+        start, end = self.localize(x1, y1, z1), self.localize(x2, y2, z2)
         route = nx.astar_path(
-            self.graph, source=start[0], target=end[0],
+            self._graph, source=start[0], target=end[0],
             heuristic=self.distance_heuristic, weight='weight')
         route.append(end[1])
         self.route = route
+        self.plot_route(route)
         return route
     
     def update_weights_for_nodes(self, nodes_with_new_weights):
@@ -61,6 +61,20 @@ class BasicAgentExtended(BasicAgent):
                 self._graph[u][v]['weight'] = new_weight
 
         return self._graph
+    
+
+    def plot_route(self, route):
+        import matplotlib.pyplot as plt
+        import numpy as np
+        for i in range(len(route)-1):
+            u = route[i]
+            v = route[i+1]
+            vertex1 = self._graph.nodes[u]['vertex']
+            x1, y1 = vertex1[0], vertex1[1]
+            vertex2 = self._graph.nodes[v]['vertex']
+            x2, y2 = vertex2[0], vertex2[1]
+            plt.plot([x1, x2], [-y1, -y2], 'ro-')
+        plt.show()
 
 
     def update_plan(self, new_plan):
