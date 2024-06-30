@@ -15,10 +15,9 @@ load_dotenv()
 async def carla_simulation(type: str = None):
     interactor = CarlaInteractor(type)
     try:
-        interactor.follow_route()
         while True:
+            interactor.follow_route()
             interactor.generate_position_message()
-            await asyncio.sleep(1)
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
