@@ -18,6 +18,7 @@ async def carla_simulation(type: str = None):
         while True:
             interactor.follow_route()
             interactor.generate_position_message()
+            interactor.check_for_denm()
     except Exception as e:
         logging.error(f"Error: {e}")
     finally:
