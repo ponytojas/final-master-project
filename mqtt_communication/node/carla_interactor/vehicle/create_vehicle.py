@@ -28,5 +28,5 @@ def create_vehicle(carla_host: str, carla_port: int, test=False):
         actor = world.spawn_actor(vehicle_bp, initial_point)
 
     # actor.set_autopilot(True)
-    logging.debug("Vehicle spawned with autopilot")
+    # logging.debug("Vehicle spawned with autopilot")
     return actor, None, world

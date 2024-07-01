@@ -15,6 +15,7 @@ from carla_interactor.create_planner import create_planner
 from carla_interactor.graph.utils import find_shortest_path, plot_graph, add_weights_to_edges, path_search
 from carla_interactor.control import ControlPose, TrackingController
 from carla_interactor.agent.BasicAgentExtended import BasicAgentExtended
+from carla_interactor.agent.GlobalRoutePlannerExtended import GlobalRoutePlannerExtended
 # from carla.agents.navigation import GlobalRoutePlanner
 
 carla_python_api_module_path = os.getenv('PYTHON_API_PATH')
@@ -39,7 +40,6 @@ END_LOCATION = {'x': -27.727, 'y': -68.283, 'z': 0.0}
 
 
 class CarlaInteractor:
-    # def __init__(self, type=None):
     def __init__(self, type='test'):
         self.client_id = str(random.randint(0, 4294967295))
         logging.info(f"Client ID: {self.client_id}")
@@ -82,12 +82,31 @@ class CarlaInteractor:
 
         self.agent.path_search(self.initial_point.x, self.initial_point.y, self.initial_point.z, self.final_point.x, self.final_point.y, self.final_point.z)
         self.agent.set_destination(self.final_point)
+        self.agent.update_weights_for_nodes([])
 
+    def check_for_denm(self):
+        denm_messages = self.data_manager.get_denm_messages()
+        if len(denm_messages) == 0:
+            return
+        logging.debug(f"Received {len(denm_messages)} DENM messages.")
+        start_time = time.time()
+        self.update_route(denm_messages)
+        end_time = time.time()
+        logging.debug(f"Time taken to update route: {end_time - start_time}")
+        self.data_manager.clear_denm_messages()
 
-    def adjust_graph_weights(self, waypoints):
-        for waypoint in waypoints:
-            self.graph.nodes[waypoint]['weight'] = sys.maxint
-        
+    def update_route(self, messages):
+        to_change = []
+        for message in messages:
+            for trace in message['denm']['location']['traces']:
+                x = trace['initialPosition']['latitude']
+                y = trace['initialPosition']['longitude']
+                node = self.agent.localize(x, y, 0)
+                for v in node:
+                    to_change.append((v, 99999))
+        if len(to_change) > 0:
+            self.agent.update_weights_for_nodes(to_change)
+
 
     def generate_position_message(self):
         new_data = {

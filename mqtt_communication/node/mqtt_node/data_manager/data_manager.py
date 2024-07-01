@@ -25,6 +25,7 @@ class DataManager:
     def __init__(self, mqtt_client: MQTTClient, actor_type: str):
         self.mqtt_client = mqtt_client
         self.data: Dict = {}
+        self.denm_messages = []
         self.actor_type = actor_type
         self.topic = f"v2x/{actor_type}/{self.mqtt_client.client_id}/cam"
         self.stationType = 5 if actor_type == "vehicle" else 1
@@ -33,6 +34,15 @@ class DataManager:
 
     def set_graph(self, graph):
         self.graph = graph
+
+    def set_denm_messages(self, denm_messages):
+        self.denm_messages.append(denm_messages)
+
+    def get_denm_messages(self):
+        return self.denm_messages
+    
+    def clear_denm_messages(self):
+        self.denm_messages = []
 
     def update_data(self, new_data: Dict):
         if self._data_deep_compare(new_data):

@@ -38,6 +38,10 @@ class MQTTClient:
         schema = topic.split("/")[-1]
         decoded_message = self.data_manager.decode_message(
             message.payload, schema)
+        
+        if schema == 'denm':
+            self.data_manager.set_denm_messages(decoded_message)
+            return
 
         if str(decoded_message['header']['stationID']) == self.client_id:
             return
