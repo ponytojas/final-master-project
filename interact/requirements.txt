@@ -1,0 +1,4 @@
+paho-mqtt==2.0.0
+python-dotenv==1.0.1
+carla
+asn1tools==0.166.0
