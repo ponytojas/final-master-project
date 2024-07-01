@@ -61,7 +61,7 @@ class CarlaInteractor:
         world = self.carla_client.get_world()
         self.map = world.get_map()
 
-        self.GRP = GlobalRoutePlanner(self.map, 0.25)
+        self.GRP = GlobalRoutePlannerExtended(self.map, 0.25)
         self.graph = add_weights_to_edges(self.GRP._graph)
 
         # plot_graph(self.graph)
