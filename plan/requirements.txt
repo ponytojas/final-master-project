@@ -3,4 +3,4 @@ python-dotenv==1.0.1
 carla
 asn1tools==0.166.0
 networkx==2.6.3
-scipy==1.7.3
+scipy==1.11.1
